@@ -531,4 +531,5 @@ func GenerateJWTForUser(user *model.User) (model.UserJwtObject, error) {
 		return j, errors.Errorf("failed to encode jwt: %v", err)
 	}
 	return j, nil
+
 }
