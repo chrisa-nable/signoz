@@ -394,6 +394,10 @@ var StaticFieldsLogsV3 = map[string]v3.AttributeKey{
 	},
 }
 
+const (
+	DefaultSiteURL = "https://localhost:3301"
+)
+
 const SigNozOrderByValue = "#SIGNOZ_VALUE"
 
 const TIMESTAMP = "timestamp"
@@ -408,3 +412,10 @@ const MaxFilterSuggestionsExamplesLimit = 10
 
 var SpanRenderLimitStr = GetOrDefaultEnv("SPAN_RENDER_LIMIT", "2500")
 var MaxSpansInTraceStr = GetOrDefaultEnv("MAX_SPANS_IN_TRACE", "250000")
+
+// GetDefaultSiteURL returns default site url, primarily
+// used to send saml request and allowing backend to
+// handle http redirect
+func GetDefaultSiteURL() string {
+	return GetOrDefaultEnv("SIGNOZ_SITE_URL", DefaultSiteURL)
+}
