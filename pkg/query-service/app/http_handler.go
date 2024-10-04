@@ -3,12 +3,15 @@ package app
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go.signoz.io/signoz/pkg/query-service/sso"
 	"io"
 	"math"
 	"net/http"
+	"net/url"
 	"regexp"
 	"slices"
 	"strconv"
@@ -490,6 +493,11 @@ func (aH *APIHandler) RegisterRoutes(router *mux.Router, am *AuthMiddleware) {
 	router.HandleFunc("/api/v1/getResetPasswordToken/{id}", am.AdminAccess(aH.getResetPasswordToken)).Methods(http.MethodGet)
 	router.HandleFunc("/api/v1/resetPassword", am.OpenAccess(aH.resetPassword)).Methods(http.MethodPost)
 	router.HandleFunc("/api/v1/changePassword/{id}", am.SelfAccess(aH.changePassword)).Methods(http.MethodPost)
+
+	// === Extended routes for NAble functionality ===
+	router.HandleFunc("/api/v1/complete/keycloak",
+		am.OpenAccess(aH.receiveKeycloakAuth)).
+		Methods(http.MethodGet)
 }
 
 func Intersection(a, b []int) (c []int) {
@@ -2033,20 +2041,6 @@ func (aH *APIHandler) registerUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	aH.Respond(w, nil)
-}
-
-func (aH *APIHandler) precheckLogin(w http.ResponseWriter, r *http.Request) {
-
-	email := r.URL.Query().Get("email")
-	sourceUrl := r.URL.Query().Get("ref")
-
-	resp, apierr := aH.appDao.PrecheckLogin(context.Background(), email, sourceUrl)
-	if apierr != nil {
-		RespondError(w, apierr, resp)
-		return
-	}
-
-	aH.Respond(w, resp)
 }
 
 func (aH *APIHandler) loginUser(w http.ResponseWriter, r *http.Request) {
@@ -4147,4 +4141,70 @@ func (aH *APIHandler) QueryRangeV4(w http.ResponseWriter, r *http.Request) {
 	}
 
 	aH.queryRangeV4(r.Context(), queryRangeParams, w, r)
+}
+
+// -- n-able specific --
+func (ah *APIHandler) precheckLogin(w http.ResponseWriter, r *http.Request) {
+	ctx := context.Background()
+
+	email := r.URL.Query().Get("email")
+	sourceUrl := r.URL.Query().Get("ref")
+
+	resp, apierr := ah.appDao.PrecheckLogin(ctx, email, sourceUrl)
+	if apierr != nil {
+		RespondError(w, apierr, resp)
+	}
+
+	ah.Respond(w, resp)
+}
+
+func handleSsoError(w http.ResponseWriter, r *http.Request, redirectURL string) {
+	ssoError := []byte("Login failed. Please contact your system administrator")
+	dst := make([]byte, base64.StdEncoding.EncodedLen(len(ssoError)))
+	base64.StdEncoding.Encode(dst, ssoError)
+
+	http.Redirect(w, r, fmt.Sprintf("%s?ssoerror=%s", redirectURL, string(dst)), http.StatusSeeOther)
+}
+
+func (ah *APIHandler) receiveKeycloakAuth(w http.ResponseWriter, r *http.Request) {
+	redirectUri := ah.GetDefaultSiteURL()
+	ctx := context.Background()
+
+	q := r.URL.Query()
+	if errType := q.Get("error"); errType != "" {
+		zap.L().Error("[receiveKeycloakAuth] failed to login with auth", zap.String("error", errType), zap.String("error_description", q.Get("error_description")))
+		http.Redirect(w, r, fmt.Sprintf("%s?ssoerror=%s", redirectUri, "failed to login through SSO "), http.StatusMovedPermanently)
+		return
+	}
+
+	relayState := q.Get("state")
+	zap.L().Debug("[receiveKeycloakAuth] relay state received", zap.String("state", relayState))
+
+	parsedState, err := url.Parse(relayState)
+	if err != nil || relayState == "" {
+		zap.L().Error("[receiveKeycloakAuth] failed to process response - invalid response", zap.Error(err), zap.Any("request", r))
+		handleSsoError(w, r, redirectUri)
+		return
+	}
+
+	// upgrade redirect url from the relay state for better accuracy
+	redirectUri = fmt.Sprintf("%s://%s%s", parsedState.Scheme, parsedState.Host, "/login")
+
+	callbackHandler := sso.Create(redirectUri)
+
+	identity, err := callbackHandler.HandleCallback(r)
+	if err != nil {
+		zap.L().Error("[receiveKeycloakAuth] failed to process HandleCallback ", zap.Error(err))
+		handleSsoError(w, r, redirectUri)
+		return
+	}
+
+	nextPage, err := ah.appDao.PrepareSsoRedirect(ctx, redirectUri, identity.Email)
+	if err != nil {
+		zap.L().Error("[receiveKeycloakAuth] failed to generate redirect URI after successful login ", zap.Error(err))
+		handleSsoError(w, r, redirectUri)
+		return
+	}
+
+	http.Redirect(w, r, nextPage, http.StatusSeeOther)
 }

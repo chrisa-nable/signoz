@@ -66,4 +66,5 @@ type Mutations interface {
 	SetApdexSettings(ctx context.Context, set *model.ApdexSettings) *model.ApiError
 
 	InsertIngestionKey(ctx context.Context, ingestionKey *model.IngestionKey) *model.ApiError
+	PrepareSsoRedirect(ctx context.Context, redirectUri, email string) (redirectURL string, apierr model.BaseApiError)
 }

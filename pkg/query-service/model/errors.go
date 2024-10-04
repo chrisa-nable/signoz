@@ -1,6 +1,8 @@
 package model
 
-import "fmt"
+import (
+	"fmt"
+)
 
 // custom errors related to registration
 type ErrFeatureUnavailable struct {
@@ -33,4 +35,12 @@ type ErrNoOrgFound struct{}
 
 func (errNoOrgFound ErrNoOrgFound) Error() string {
 	return "no org found"
+}
+
+// InternalErrorStr returns a ApiError object of internal type for string input
+func InternalErrorStr(s string) *ApiError {
+	return &ApiError{
+		Typ: ErrorInternal,
+		Err: fmt.Errorf(s),
+	}
 }

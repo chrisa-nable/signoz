@@ -43,9 +43,6 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-    depends_on:
-      clickhouse:
-        condition: service_healthy
 
   frontend:
     build:
@@ -59,7 +56,6 @@ services:
       - FRONTEND_API_ENDPOINT=http://query-service:8080
     restart: on-failure
     depends_on:
-      - alertmanager
       - query-service
     ports:
       - "3301:3301"

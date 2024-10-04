@@ -107,7 +107,7 @@ build-query-service-amd64: build-query-service-static-amd64
 	@echo "------------------"
 	@docker build --file $(QUERY_SERVICE_DIRECTORY)/Dockerfile \
 	--tag $(REPONAME)/$(QUERY_SERVICE_DOCKER_IMAGE):$(DOCKER_TAG) \
-	--build-arg TARGETPLATFORM="linux/amd64" .
+	--build-arg TARGETPLATFORM="linux/arm64" .
 
 # Step to build and push docker image of query in amd64 and arm64 (used in push pipeline)
 build-push-query-service: build-query-service-static-all
